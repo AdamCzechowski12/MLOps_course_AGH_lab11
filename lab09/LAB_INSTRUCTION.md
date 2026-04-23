@@ -130,7 +130,7 @@ You should see your account ID and user ARN printed back.
 
 ### 1.4 Set up billing alerts
 1. Navigate to the **Billing and Cost Management** dashboard from the AWS Management Console.
-2. Activate access to billing data by navigating to **Billing Dashboard → Preferences**, check the box for "Receive Billing Alerts" and save the changes.
+2. Activate access to billing data by navigating to **Billing Dashboard > Preferences**, check the box for "Receive Billing Alerts" and save the changes.
 3. Set up a billing budget. Choose the "Cost budget" template, set a monthly limit (e.g. $5), and configure it to monitor actual costs.
 4. Add an email notification by entering your email address to receive alerts when costs approach or exceed the budget.
 
@@ -165,7 +165,7 @@ Instead of building a Docker image ourselves, we will **mirror** the TEI image f
 
 > **Note:** Make sure all resources are created in the same region. If you are using **AWS Academy Learner Lab**, you must use **us-east-1** - it is the only supported region. If you are using a personal account, pick any region and stay consistent throughout the lab.
 
-1. Navigate to **ECR → Repositories** in the AWS Console.
+1. Navigate to **ECR > Repositories** in the AWS Console.
 2. Click **Create repository**.
 3. Name it `text-embeddings-inference`.
 > **Note:** creating one repository per application is good practice - it keeps versions isolated and makes access control straightforward.
@@ -321,9 +321,9 @@ Subnets divide your VPC into smaller segments with specific roles - public-facin
 
 An Internet Gateway (IGW) connects public subnets to the internet bidirectionally - resources in public subnets can receive inbound traffic and send outbound traffic.
 
-1. Navigate to **VPC → Internet Gateways** and click **Create internet gateway**.
+1. Navigate to **VPC > Internet Gateways** and click **Create internet gateway**.
 2. Name it `embeddings-igw`.
-3. After creation, click **Actions → Attach to VPC** and attach it to `embeddings-vpc`.
+3. After creation, click **Actions > Attach to VPC** and attach it to `embeddings-vpc`.
 
 **Additional references:**
 - [Internet gateways](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Internet_Gateway.html)
@@ -381,7 +381,7 @@ A NAT Gateway allows instances in private subnets to access the internet without
 
 Security groups are stateful firewalls that operate at the resource level. **Stateful** means that when an inbound rule allows a connection, the return traffic is automatically allowed - you do not need a separate outbound rule for responses.
 
-We need two Security Groups. Navigate to **VPC Console → Security Groups → Create security group** and for each one select **VPC:** `embeddings-vpc`.
+We need two Security Groups. Navigate to **VPC Console > Security Groups > Create security group** and for each one select **VPC:** `embeddings-vpc`.
 
 **`embeddings-alb-sg`** (for the load balancer)
 - **Inbound:** Allow TCP traffic on port `80` from anywhere (`0.0.0.0/0`)
@@ -416,7 +416,7 @@ The Target Group is the list of backends the ALB routes to. ECS will automatical
    - **Target registration:** leave empty - ECS registers tasks automatically
 
 #### 3.7.2 Create the ALB
-1. In the **EC2 Console**, navigate to **Load Balancers** and click **Create load balancer → Application Load Balancer**.
+1. In the **EC2 Console**, navigate to **Load Balancers** and click **Create load balancer > Application Load Balancer**.
 2. Configure the following:
    - **Name:** `embeddings-alb`
    - **Scheme:** `Internet-facing` - we need to call the service from outside the VPC
@@ -527,7 +527,7 @@ After creating the service, startup takes a few minutes. Do not proceed until bo
 
 ### 4.5 Access the service
 
-1. Navigate to **EC2 → Load Balancers**, find `embeddings-alb`, and copy the **DNS name**.
+1. Navigate to **EC2 > Load Balancers**, find `embeddings-alb`, and copy the **DNS name**.
 2. Verify the service is up:
 ```bash
 curl http://<alb-dns-name>/embed \
@@ -622,13 +622,13 @@ AWS CloudWatch is the native observability platform for AWS. ECS Fargate automat
 
 Every line the TEI process writes to stdout is captured and streamed to CloudWatch Logs in real time.
 
-1. Navigate to **CloudWatch → Log groups**.
+1. Navigate to **CloudWatch > Log groups**.
 2. Find the log group for your task definition - typically `/ecs/embeddings-task`.
 3. Open a log stream. You will see TEI startup messages, the model download progress, and one log entry per HTTP request received.
 
 ### 6.2 View ECS metrics
 
-1. Navigate to **CloudWatch → Metrics → ECS**.
+1. Navigate to **CloudWatch > Metrics > ECS**.
 2. Browse per-service metrics: `CPUUtilization` and `MemoryUtilization`.
 3. During model download on startup, you will see a brief spike in both. After that, utilization levels off until requests arrive.
 
@@ -636,7 +636,7 @@ Every line the TEI process writes to stdout is captured and streamed to CloudWat
 
 A CloudWatch alarm watches a metric and sends a notification when it crosses a threshold. This is the starting point for production alerting in MLOps.
 
-1. In **CloudWatch → Alarms**, click **Create alarm**.
+1. In **CloudWatch > Alarms**, click **Create alarm**.
 2. Select the `MemoryUtilization` metric for `embeddings-service`.
 3. Set the threshold to 80% and add an email notification via SNS.
 
@@ -647,43 +647,41 @@ A CloudWatch alarm watches a metric and sends a notification when it crosses a t
 
 ---
 
-## 7. Cleanup
-
-> **Complete this section the same day you finish the lab.** NAT Gateway + ALB + Elastic IP accrue ~$1.50/day even when no requests are coming in.
-
-Delete resources in the order below - AWS blocks deletion of resources that other resources still depend on:
-
-1. **ECS service** - set desired count to `0` first, then delete. Tasks will stop automatically.
-2. **ECS cluster** - delete once the service is gone.
-3. **ALB** - delete via **EC2 → Load Balancers**.
-4. **Target Group** - delete via **EC2 → Target Groups**.
-5. **NAT Gateway** - delete and wait for `deleted` state (~2 minutes).
-6. **Elastic IP** - release the EIP that was attached to the NAT Gateway. Unattached EIPs are billed even when unused.
-7. **Internet Gateway** - detach from the VPC, then delete.
-8. **VPC** - deleting the VPC cascades to subnets, route tables, and security groups.
-9. **ECR repository** - delete all images, then the repository.
-10. **Task definitions** - deregister all revisions (no cost, but keeps the console tidy).
-
-Check the **Billing Dashboard** the next day. If running charges are $0.00 for ECS, EC2 (load balancers), and VPC (NAT Gateway), cleanup was successful.
-
----
-
-## 8. Lab submission
+## 7. Lab submission
 
 As homework, you are expected to complete this entire lab. Submit the following:
 
 **Screenshots or a short screen recording showing:**
 1. IAM admin user with `AdministratorAccess` policy *(personal accounts only)*
-2. ECR repository with the pushed `cpu-1.9.3` image and a recent push timestamp
+2. ECR repository with the pushed `latest` image and a recent push timestamp
 3. VPC Console showing `embeddings-vpc` with 4 subnets, IGW, and NAT Gateway
 4. Route tables with correct associations and routes
 5. Target Group showing 2 healthy targets
 6. ECS cluster with 2 tasks in `RUNNING` state
 7. Terminal output of your Python test script with similarity scores printed
-8. CloudWatch log stream showing TEI startup logs and at least one request entry
+
+> **Complete the cleanup section below before the end of the day.** Do not skip it - running resources cost money even when idle.
+
+---
+
+## 8. Cleanup
+
+> **Complete this section the same day you finish the lab.** NAT Gateway, ALB, and Elastic IP accrue charges even when no requests are coming in.
+
+Delete resources in the order below - AWS blocks deletion of resources that other resources still depend on:
+
+1. ECS > Clusters > `embeddings-cluster` > Services > `embeddings-service` > Delete > check **Force delete service**
+2. ECS > Clusters > `embeddings-cluster` > Delete
+3. EC2 > Load Balancers > `embeddings-alb` > Delete
+4. EC2 > Target Groups > `embeddings-target-group` > Delete
+5. VPC > NAT Gateways > `embeddings-nat` > Delete, wait until status is `deleted`
+6. EC2 > Elastic IP addresses > select the EIP > Actions > Release
+7. VPC > Your VPCs > `embeddings-vpc` > Delete (removes IGW, subnets, route tables, security groups automatically)
+8. ECR > Repositories > `text-embeddings-inference` > Delete all images, then delete the repository
+
 
 **Code:**
-- Your Python test script from section 5.4
+- Your Python test script from section 5.3
 
 **Proof of cleanup:**
 - Screenshot of the empty ECS cluster, or the Billing Dashboard showing $0 for ECS, EC2, and VPC.
