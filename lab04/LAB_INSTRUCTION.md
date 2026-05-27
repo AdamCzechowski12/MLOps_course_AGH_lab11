@@ -1,4 +1,4 @@
-# Laboratory 8 instruction
+# Laboratory 4 instruction
 
 ## Introduction
 
@@ -8,7 +8,10 @@ this in MLOps practice: vector database (Milvus) and vector index (Postgres exte
 
 ## PostgreSQL + TimescaleDB + pgvectorscale (2 points)
 
-### Prebuilt Docker image
+We do this in two passes: first manually in a throwaway container to see how extensions
+work, then with Docker Compose to automate the same setup for real use.
+
+### Manual setup: exploring the image
 
 TimescaleDB is a Postgres extension for analytics and time series, but it also includes
 many other useful things. TimescaleDB, in turn, can be extended with
@@ -53,43 +56,43 @@ CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;
 
 6. Check the installed extensions again, `vectorscale` should now be listed there.
 
-### Preparing vector database with Docker Compose
+### Automated setup with Docker Compose
+
+From here on we build the real setup — reusable, declarative, ready for other services to depend on.
 
 1. Create `vectorscale_db` directory and go there. We will prepare Docker Compose there.
 2. Postgres Docker containers can run SQL script upon initialization, which is very useful
    for installing and enabling extensions. Create `initdb` directory, and
-   `create_similar_search_service_db.sql` file inside. Fill its contents:
+   `prepare_similarity_search_service_db.sql` file inside. Fill its contents:
 ```sql
 -- prepare_similarity_search_service_db.sql
 
 -- Create the database for the similarity search service
-# CREATE DATABASE similarity_search_service_db;
+CREATE DATABASE similarity_search_service_db;
 
 -- Connect to the database
-...
+-- TODO: switch the psql session into similarity_search_service_db
+--       (hint: use the `\c <db_name>` meta-command — same family as `\dx` from step 4)
 
 -- Enable vectorscale extension
-...
+-- TODO: enable the `vectorscale` extension inside the new database
+--       (hint: same `CREATE EXTENSION IF NOT EXISTS <name> CASCADE;` you ran in step 5)
 ```
-3. Create `docker-compose.yml` file, using provided template. It will create
-   the `timescaledb` service with TimescaleDB container and mount the `initdb`
-   directory to the `/docker-entrypoint-initdb.d` directory in the container. 
-   This directory is used to initialize any SQL scripts when the Postgres server is started.
-   Fill the template as necessary.
+3. Create `docker-compose.yml` file with the contents below. It defines the `timescaledb`
+   service and mounts the `initdb` script into `/docker-entrypoint-initdb.d/` inside the
+   container — Postgres runs every `.sql` file in that directory on the **first** start
+   (when the data volume is empty), so our database + extension are created automatically.
 ```yaml
-version: '3.9'
-
 services:
   timescaledb:
-    # define image
+    image: timescale/timescaledb-ha:pg16
     container_name: vectorscaledb
     environment:
       POSTGRES_PASSWORD: password
-      POSTGRES_USER: postgres
     ports:
-      - "xxxx:yyyy"
+      - "5555:5432"
     volumes:
-      - # map the initdb prepare db script to :/docker-entrypoint-initdb.d/prepare_similarity_search_service_db.sql
+      - ./initdb/prepare_similarity_search_service_db.sql:/docker-entrypoint-initdb.d/prepare_similarity_search_service_db.sql
 ```
 
 4. Run the container:
@@ -116,7 +119,7 @@ db_url = URL.create(
     username="postgres",
     password="password",
     host="localhost",
-    port=xxxx,
+    port=5555,
     database="similarity_search_service_db"
 )
 ```
@@ -198,12 +201,12 @@ with Session(engine) as session:
 
 
 # calculate the cosine similarity between the first image and the K rest of the images, order the images by the similarity score
-def find_k_images(engine: Engine, k: int, orginal_image: Images) -> list[Images]:
+def find_k_images(engine: Engine, k: int, original_image: Images) -> list[Images]:
     with Session(engine) as session:
         # execution_options={"prebuffer_rows": True} is used to prebuffer the rows, this is useful when we want to fetch the rows in chunks and return them after session is closed
         result = session.execute(
             select(Images)
-            .order_by(Images.image_embedding.cosine_similarity(orginal_image.image_embedding))
+            .order_by(Images.image_embedding.cosine_similarity(original_image.image_embedding))
             .limit(k), 
             execution_options={"prebuffer_rows": True}
         )
@@ -220,11 +223,11 @@ We can filter the found nearest neighbors, e.g. by required minimal similarity s
 
 ```python
 # find the images with the similarity score greater than 0.9
-def find_images_with_similarity_score_greater_than(engine: Engine, similarity_score: float, orginal_image: Images) -> list[Images]:
+def find_images_with_similarity_score_greater_than(engine: Engine, similarity_score: float, original_image: Images) -> list[Images]:
     with Session(engine) as session:
         result = session.execute(
             select(Images)
-            .filter(Images.image_embedding.cosine_similarity(orginal_image.image_embedding) > similarity_score), 
+            .filter(Images.image_embedding.cosine_similarity(original_image.image_embedding) > similarity_score), 
             execution_options={"prebuffer_rows": True}
         )
         return result
@@ -271,7 +274,7 @@ that it produces 512-dimensional embeddings. This is a value we need to declare 
 as vector length.
 
 ```python
-from sqlalchemy import Integer, Float, Boolean
+from sqlalchemy import Integer, Float, Boolean, Text
 
 
 class Games(Base):
@@ -283,7 +286,8 @@ class Games(Base):
         
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(256))
-    description: Mapped[str] = mapped_column(String(4096))
+    # `Text` is an unbounded string in Postgres — game descriptions can run a few KB
+    description: Mapped[str] = mapped_column(Text)
     windows: Mapped[bool] = mapped_column(Boolean)
     linux: Mapped[bool] = mapped_column(Boolean)
     mac: Mapped[bool] = mapped_column(Boolean)
@@ -314,24 +318,26 @@ from tqdm import tqdm
 
 def insert_games(engine, dataset):
     with tqdm(total=len(dataset)) as pbar:
-    for i, game in enumerate(dataset):
-        game_description = game["About the game"] or ""
-        game_embedding = generate_embeddings(game_description)
-        name, windows, linux, mac, price = game["Name"], game["Windows"], game["Linux"], game["Mac"], game["Price"]
-        if name and windows and linux and mac and price and game_description:
-            game = Games(
-                name=game["Name"], 
-                description=game_description[0:4096],
-                windows=game["Windows"], 
-                linux=game["Linux"], 
-                mac=game["Mac"], 
-                price=game["Price"], 
-                game_description_embedding=game_embedding
-            )
-            with Session(engine) as session:
-                session.add(game)
-                session.commit()
-        pbar.update(1)
+       for i, game in enumerate(dataset):
+           game_description = game["About the game"] or ""
+           game_embedding = generate_embeddings(game_description)
+           name, windows, linux, mac, price = game["Name"], game["Windows"], game["Linux"], game["Mac"], game["Price"]
+           # keep rows with the required fields; windows/linux/mac are platform flags (True/False),
+           # not missing-data signals — don't gate the insert on them or you discard most of the dataset
+           if name and game_description and price is not None:
+               game = Games(
+                   name=game["Name"], 
+                   description=game_description,
+                   windows=game["Windows"], 
+                   linux=game["Linux"], 
+                   mac=game["Mac"], 
+                   price=game["Price"], 
+                   game_description_embedding=game_embedding
+               )
+               with Session(engine) as session:
+                   session.add(game)
+                   session.commit()
+           pbar.update(1)
 ```
 
 Now we can insert the data into the table.
@@ -340,6 +346,8 @@ insert_games(engine, dataset)
 ```
 
 Now the function that will find the games similar to the given game, and also include given filtering criteria.
+Note that pgvector exposes *distances* (lower = more similar), so ascending `ORDER BY cosine_distance(...)`
+returns the closest matches first — no need for `DESC`.
 ```python
 def find_game(
     engine: Engine, 
@@ -404,7 +412,7 @@ capabilities with context and information drawn from a knowledge base. Relevant 
 is found with vector search and appended to the prompt, resulting in less hallucinations and
 more precise, relevant answers.
 
-In such cases, we don't relaly need any additional capabilities like attributes filtering, ACID,
+In such cases, we don't really need any additional capabilities like attributes filtering, ACID,
 JOINs or other Postgres-related advantages. Thus, we will use [Milvus](https://milvus.io/), a typical
 example of vector database. To generate embeddings, we will use
 [Silver Retriever model](https://huggingface.co/ipipan/silver-retriever-base-v1.1) from Sentence Transformers.
@@ -416,7 +424,7 @@ It is based on HerBERT model for Polish language, and finetuned for retrieval of
 mkdir milvus_db
 cd milvus_db
 
-wget https://github.com/milvus-io/milvus/releases/download/v2.4.13-hotfix/milvus-standalone-docker-compose.yml -O docker-compose.yml
+wget https://github.com/milvus-io/milvus/releases/download/v2.6.15/milvus-standalone-docker-compose.yml -O docker-compose.yml
 ```
 2. Run the database with `docker compose up -d`.
 3. Next code sections are quite interactive and will probably be easier to run inside a Jupyter
@@ -578,7 +586,6 @@ generate_embeddings(file_json, embeddings_json, model)
 ```
 11. Now we can easily insert the data into Milvus:
 ```python
-
 def insert_embeddings(file_json, embeddings_json, client=milvus_client):
     rows = []
     with open(os.path.join(data_dir, file_json), "r") as t_f, open(os.path.join(data_dir, embeddings_json), "r") as e_f:
@@ -600,9 +607,8 @@ milvus_client.load_collection("rag_texts_and_embeddings")
 
 12. Now let's do some semantic search!
 ```python
-
-
 # search
+
 def search(model, query, client=milvus_client):
     embedded_query = model.encode(query).tolist()
     result = client.search(
@@ -649,11 +655,11 @@ from google import genai
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-flash"
 
 def generate_response(prompt: str):
     try:
-        # Send request to Gemini 2.0 Flash API and get the response
+        # Send request to Gemini 2.5 Flash API and get the response
         response = gemini_client.models.generate_content(
             model=MODEL,
             contents=prompt,
