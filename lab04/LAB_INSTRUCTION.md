@@ -200,16 +200,20 @@ with Session(engine) as session:
     image = session.query(Images).first()
 
 
-# calculate the cosine similarity between the first image and the K rest of the images, order the images by the similarity score
+# Note: pgvector exposes *distances*, not similarities (lower = more similar).
+# To rank, sort ascending by `cosine_distance`. To filter by a similarity threshold,
+# use `1 - cosine_distance > threshold`.
+
+# order the K images by ascending cosine distance to the first image (smallest distance = most similar)
 def find_k_images(engine: Engine, k: int, original_image: Images) -> list[Images]:
     with Session(engine) as session:
         # execution_options={"prebuffer_rows": True} is used to prebuffer the rows, this is useful when we want to fetch the rows in chunks and return them after session is closed
         result = session.execute(
             select(Images)
-            .order_by(Images.image_embedding.cosine_similarity(original_image.image_embedding))
-            .limit(k), 
+            .order_by(Images.image_embedding.cosine_distance(original_image.image_embedding))
+            .limit(k),
             execution_options={"prebuffer_rows": True}
-        )
+        ).scalars().all()
         return result
 
 # find the 10 most similar images to the first image
@@ -222,14 +226,14 @@ similar_images = find_k_images(engine, k, image)
 We can filter the found nearest neighbors, e.g. by required minimal similarity score.
 
 ```python
-# find the images with the similarity score greater than 0.9
+# find images with similarity to the original above the threshold (similarity = 1 - cosine_distance)
 def find_images_with_similarity_score_greater_than(engine: Engine, similarity_score: float, original_image: Images) -> list[Images]:
     with Session(engine) as session:
         result = session.execute(
             select(Images)
-            .filter(Images.image_embedding.cosine_similarity(original_image.image_embedding) > similarity_score), 
+            .filter((1 - Images.image_embedding.cosine_distance(original_image.image_embedding)) > similarity_score),
             execution_options={"prebuffer_rows": True}
-        )
+        ).scalars().all()
         return result
 ```
 
@@ -683,4 +687,19 @@ def rag(model, query: str) -> str:
     # having all prepared functions, you can combine them together and try to build your own RAG!
 ```
 
-6. Test the RAG system with a few sample queries.
+6. Test the RAG system with a few sample queries. Then experiment with the prompt - small wording changes can dramatically reshape the output. Try at least 2–3 of:
+   - **Style:** force pirate speak, Shakespearean English, Yoda, or corporate jargon.
+   - **Language:** instruct the model to answer in Polish (or Japanese, Latin, …)
+     even though the retrieved context is in English.
+   - **Format:** force a haiku, a single sentence, exactly three bullet points,
+     or "emoji + one-line explanation" per fact.
+   - **Persona:** a grumpy professor; an over-enthusiastic YouTuber; a skeptical
+     reviewer that grades each claim "supported / unsupported by context".
+   - **Constraints:** answer without using the letter "e"; max 50 words;
+     each sentence starts with the next letter of the alphabet.
+   - **Hallucination probe:** ask something *not* in the retrieved context and
+     check whether the model invents an answer or honestly says "not in sources".
+     A good RAG prompt should make refusal easy.
+
+   Note which prompt tweaks survive retrieval (model stays grounded) and which
+   make it drift away from the context. That tension is the core RAG craft.
