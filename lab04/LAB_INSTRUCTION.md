@@ -56,6 +56,11 @@ CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;
 
 6. Check the installed extensions again, `vectorscale` should now be listed there.
 
+7. Stop container before moving to the next steps
+```bash
+docker stop timescaledb
+```
+
 ### Automated setup with Docker Compose
 
 From here on we build the real setup — reusable, declarative, ready for other services to depend on.
