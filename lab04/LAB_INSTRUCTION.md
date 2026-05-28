@@ -254,20 +254,20 @@ dataset = load_dataset("FronkonGames/steam-games-dataset")
 columns = dataset["train"].features
 print(columns)
 
-columns_to_keep = ["Name", "Windows", "Linux", "Mac", "About the game", "Supported languages", "Price"]
+columns_to_keep = ["name", "windows", "linux", "mac", "detailed_description", "supported_languages", "price"]
 
-N = 40000
+N = 40000 # you can adjust this number
 dataset = dataset["train"].select_columns(columns_to_keep).select(range(N))
 ```
 
 We will use columns:
-* `Name`
-* `About the game`
-* `Price`
-* `Platforms` - the platforms on which the game is available; note that there is separate field
+* `name`
+* `detailed_description`
+* `price`
+* `platforms` - the platforms on which the game is available; note that there is separate field
   for each platform (Windows, Linux, macOS)
 
-For vector search, we can use the `About the game` column, which is an arbitrary text description. A great model
+For vector search, we can use the `detailed_description` column, which is an arbitrary text description. A great model
 for this purpose is `distiluse-base-multilingual-cased-v2` from [Sentence Transformers](https://sbert.net/).
 This model is a multilingual text transformers, and thus it will work well for descriptions of games in languages
 other than English.
@@ -328,19 +328,19 @@ from tqdm import tqdm
 def insert_games(engine, dataset):
     with tqdm(total=len(dataset)) as pbar:
        for i, game in enumerate(dataset):
-           game_description = game["About the game"] or ""
+           game_description = game["detailed_description"] or ""
            game_embedding = generate_embeddings(game_description)
-           name, windows, linux, mac, price = game["Name"], game["Windows"], game["Linux"], game["Mac"], game["Price"]
+           name, windows, linux, mac, price = game["name"], game["windows"], game["linux"], game["mac"], game["price"]
            # keep rows with the required fields; windows/linux/mac are platform flags (True/False),
            # not missing-data signals — don't gate the insert on them or you discard most of the dataset
            if name and game_description and price is not None:
                game = Games(
-                   name=game["Name"], 
+                   name=game["name"], 
                    description=game_description,
-                   windows=game["Windows"], 
-                   linux=game["Linux"], 
-                   mac=game["Mac"], 
-                   price=game["Price"], 
+                   windows=game["windows"], 
+                   linux=game["linux"], 
+                   mac=game["mac"], 
+                   price=game["price"], 
                    game_description_embedding=game_embedding
                )
                with Session(engine) as session:
