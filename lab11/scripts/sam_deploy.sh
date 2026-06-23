@@ -4,7 +4,7 @@
 set -euo pipefail
 
 sam deploy \
-  --template-file sam-template.yaml \
+  --template-file lab11/sam-template.yaml \
   --stack-name "$STACK_NAME" \
   --image-repository "$IMAGE_REPOSITORY" \
   --parameter-overrides \
