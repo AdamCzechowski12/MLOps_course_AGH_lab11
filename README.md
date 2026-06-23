@@ -40,3 +40,4 @@ This course is continuously evolving and expanding. New topics and improvements 
 ## Contributing
 
 Students and contributors who spot errors or have improvements are welcome to create pull requests or issues. Students will be rewarded with extra points for their contributions!
+# trigger
