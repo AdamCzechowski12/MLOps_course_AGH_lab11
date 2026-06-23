@@ -86,19 +86,19 @@ jobs:
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
       - name: Delete stack if rollback state
-        run: bash scripts/recover_rollback.sh
+        run: bash lab11/scripts/recover_rollback.sh
         env:
           STACK_NAME: sentiment-app-stack
           AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Resolve Lambda role ARN
         id: lambda_role
-        run: bash scripts/resolve_lambda_role.sh
+        run: bash lab11/scripts/resolve_lambda_role.sh
         env:
           ROLE_NAME: LabRole
 
       - name: Deploy with AWS SAM
-        run: bash scripts/sam_deploy.sh
+        run: bash lab11/scripts/sam_deploy.sh
         env:
           STACK_NAME: sentiment-app-stack
           AWS_REGION: ${{ env.AWS_REGION }}
